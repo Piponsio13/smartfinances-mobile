@@ -4,7 +4,7 @@ import Field from '../Field';
 import SelectField from '../SelectField';
 import SegmentedControl from '../SegmentedControl';
 import DateField from '../DateField';
-import type { Transaction, CreateTransactionRequest } from '../../api/transactions';
+import { transactionsApi, type Transaction, type CreateTransactionRequest } from '../../api/transactions';
 import type { Category } from '../../api/categories';
 import type { ApiError } from '../../api/client';
 
@@ -32,6 +32,9 @@ export default function TransactionModal({ open, transaction, categories, onSave
   const [amountText, setAmountText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Once the user picks a category by hand we stop auto-filling it.
+  const [categoryTouched, setCategoryTouched] = useState(false);
+  const [autoFilled, setAutoFilled] = useState(false);
 
   const isEditing = !!transaction;
   const filteredCategories = categories.filter((c) => c.type === form.type);
@@ -50,15 +53,43 @@ export default function TransactionModal({ open, transaction, categories, onSave
         currency: transaction.currency ?? 'USD',
       });
       setAmountText(String(transaction.amount));
+      setCategoryTouched(true);
     } else {
       setForm(defaultForm());
       setAmountText('');
+      setCategoryTouched(false);
     }
+    setAutoFilled(false);
     setError('');
   }, [open, transaction, categories]);
 
+  // Suggest a category from the description as the user types (unless they picked one).
+  useEffect(() => {
+    if (!open || categoryTouched) return;
+    const description = form.description.trim();
+    if (description.length < 3) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        const suggestion = await transactionsApi.suggestCategory(description, form.type);
+        if (categoryTouched || suggestion.categoryId == null) return;
+        const match = categories.find((c) => c.id === suggestion.categoryId && c.type === form.type);
+        if (match) {
+          setForm((f) => ({ ...f, categoryId: match.id }));
+          setAutoFilled(true);
+        }
+      } catch {
+        // Suggestion is best-effort; leave the field for the user on failure.
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [open, categoryTouched, form.description, form.type, categories]);
+
   function handleTypeChange(newType: 'INCOME' | 'EXPENSE') {
     setForm((f) => ({ ...f, type: newType, categoryId: 0 }));
+    setCategoryTouched(false);
+    setAutoFilled(false);
   }
 
   async function handleSubmit() {
@@ -124,10 +155,14 @@ export default function TransactionModal({ open, transaction, categories, onSave
       />
 
       <SelectField
-        label="Category"
+        label={autoFilled ? 'Category · auto-filled' : 'Category'}
         value={form.categoryId || null}
         options={filteredCategories.map((c) => ({ value: c.id, label: c.name }))}
-        onChange={(v) => setForm((f) => ({ ...f, categoryId: Number(v) }))}
+        onChange={(v) => {
+          setCategoryTouched(true);
+          setAutoFilled(false);
+          setForm((f) => ({ ...f, categoryId: Number(v) }));
+        }}
       />
 
       <DateField

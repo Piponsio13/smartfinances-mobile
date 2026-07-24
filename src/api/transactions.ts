@@ -36,6 +36,12 @@ export interface CreateTransactionRequest {
   currency?: string;
 }
 
+export interface CategorySuggestion {
+  categoryId: number | null;
+  categoryName: string | null;
+  confidence: number;
+}
+
 export const transactionsApi = {
   getAll: (filters?: TransactionFilters) =>
     fetch(`${BASE_URL}/api/transactions${buildQueryString(filters ?? {})}`, {
@@ -76,4 +82,9 @@ export const transactionsApi = {
 
   exportPdfUrl: (filters?: TransactionFilters) =>
     `${BASE_URL}/api/transactions/export/pdf${buildQueryString(filters ?? {})}`,
+
+  suggestCategory: (description: string, type: 'INCOME' | 'EXPENSE') =>
+    fetch(`${BASE_URL}/api/transactions/suggest-category${buildQueryString({ description, type })}`, {
+      headers: getHeaders(),
+    }).then((res) => handleResponse<CategorySuggestion>(res)),
 };
